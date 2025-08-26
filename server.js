@@ -114,6 +114,9 @@ async function getGenerateJwt() {
 
 class CoinbaseAdvancedAPI {
   constructor(apiKeyResource, privateKeyPem) {
+    console.log("--- DEBUG: DATA RECEIVED BY SERVER ---");
+    console.log("Raw apiKeyResource:", apiKeyResource);
+
     this.apiKeyResource = (apiKeyResource || '').trim(); // organizations/<org>/apiKeys/<uuid>
     const parts = this.apiKeyResource.split('/apiKeys/');
     if (parts.length !== 2) {
@@ -122,6 +125,9 @@ class CoinbaseAdvancedAPI {
     this.orgResource = parts[0];
     this.apiKeyId = parts[1];
     this.privateKeyPem = normalizePrivateKey(privateKeyPem);
+
+    console.log("Normalized privateKeyPem (sent to Coinbase SDK):", this.privateKeyPem);
+    console.log("--- END DEBUG ---");
 
     this.HOST = 'api.coinbase.com';
   }
