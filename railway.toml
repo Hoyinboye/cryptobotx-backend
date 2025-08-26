@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm start"
+
+[variables]
+NPM_CONFIG_PRODUCTION = "false"
