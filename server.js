@@ -110,6 +110,30 @@ function normalizePrivateKey(input) {
   return key;
 }
 
+let _cdpAuthModPromise = null;
+async function getGenerateJwt() {
+  try {
+    if (!_cdpAuthModPromise) {
+      // Try multiple import paths for different CDP SDK versions
+      try {
+        _cdpAuthModPromise = import('@coinbase/cdp-sdk');
+      } catch (e) {
+        try {
+          _cdpAuthModPromise = import('@coinbase/cdp-sdk/auth');
+        } catch (e2) {
+          // Fallback to require for CommonJS
+          const cdp = require('@coinbase/cdp-sdk');
+          return cdp.generateJwt || cdp.auth?.generateJwt;
+        }
+      }
+    }
+    const mod = await _cdpAuthModPromise;
+    return mod.generateJwt || mod.auth?.generateJwt || mod.default?.generateJwt;
+  } catch (error) {
+    console.error('CDP SDK import failed:', error.message);
+    throw new Error('CDP SDK not available - check installation');
+  }
+}
 
 // ---------- Coinbase Advanced Trade client (CDP SDK signer) ----------
 class CoinbaseAdvancedAPI {
