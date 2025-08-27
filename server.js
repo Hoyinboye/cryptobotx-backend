@@ -237,49 +237,84 @@ class CoinbaseAdvancedAPI {
     this.HOST = 'api.coinbase.com';
   }
 
-  async request(method, endpoint) {
-    const host = this.HOST;
-    const path = `/api/v3/brokerage${endpoint}`;
-    const generateJwt = await getGenerateJwt();
+ async request(method, endpoint) {
+  const host = this.HOST;
+  const path = `/api/v3/brokerage${endpoint}`;
+  
+  try {
+    const token = this.generateJWT(method, host, path);
+    
+    console.log("Making request to:", `https://${host}${path}`);
+    
+    const res = await fetch(`https://${host}${path}`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-    // try both kid formats
-    const ids = [this.apiKeyResource, this.apiKeyId];
-    let lastErr;
-
-    for (const apiKeyId of ids) {
-      try {
-        const token = await generateJwt({
-          apiKeyId, // "organizations/.../apiKeys/<uuid>" OR "<uuid>"
-          apiKeySecret: this.privateKeyPem,
-          requestMethod: method.toUpperCase(),
-          requestHost: host,
-          requestPath: path,
-          expiresIn: 120,
-        });
-
-        const res = await fetch(`https://${host}${path}`, {
-          method,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Coinbase API ${res.status}: ${text || 'Unauthorized'}`);
-        }
-        return await res.json();
-      } catch (e) {
-        lastErr = e;
-      }
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`Coinbase API ${res.status}:`, text);
+      throw new Error(`Coinbase API ${res.status}: ${text || 'Unauthorized'}`);
     }
-    throw lastErr || new Error('Coinbase API request failed');
+    
+    const data = await res.json();
+    console.log("✅ Coinbase API success!");
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Coinbase API failed:", error.message);
+    throw error;
   }
+}
 
-  getAccounts() {
-    return this.request('GET', '/accounts');
-  }
+generateJWT(method, host, path) {
+  const crypto = require('crypto');
+  const now = Math.floor(Date.now() / 1000);
+  
+  const header = {
+    alg: 'ES256',
+    typ: 'JWT',
+    kid: this.apiKeyResource,
+    nonce: crypto.randomBytes(16).toString('hex')
+  };
+  
+  const payload = {
+    iss: 'cdp',
+    sub: this.apiKeyResource,
+    aud: ['retail_rest_api_proxy'],
+    nbf: now,
+    exp: now + 120,
+    uri: `${method} ${host}${path}`
+  };
+
+  console.log("JWT Header:", JSON.stringify(header));
+  console.log("JWT Payload:", JSON.stringify(payload));
+  
+  const base64UrlEncode = (obj) => {
+    return Buffer.from(JSON.stringify(obj))
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+  
+  const encodedHeader = base64UrlEncode(header);
+  const encodedPayload = base64UrlEncode(payload);
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  
+  const sign = crypto.createSign('SHA256');
+  sign.update(signingInput);
+  const signature = sign.sign(this.privateKeyPem)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  
+  return `${signingInput}.${signature}`;
+}
 
   getCandles(productId, granularity, startISO, endISO) {
     const qs = new URLSearchParams({
