@@ -125,14 +125,14 @@ function generateJwtManually({ apiKeyId, apiKeySecret, requestMethod, requestHos
     nonce: crypto.randomBytes(16).toString('hex') // Add nonce for uniqueness
   };
   
-  const payload = {
-    iss: 'coinbase-cloud',  // FIXED: Changed from 'cdp' to 'coinbase-cloud'
-    sub: apiKeyId,
-    aud: ['public_websocket_api'],
-    nbf: now,
-    exp: now + expiresIn,
-    uri: `${requestMethod} ${requestHost}${requestPath}`,  // e.g., "GET api.coinbase.com/api/v3/brokerage/accounts"
-  };
+ const payload = {
+  iss: 'cdp',  // FIXED: Changed from 'coinbase-cloud' to 'cdp'
+  sub: this.apiKeyResource,
+  aud: ['retail_rest_api_proxy'],  // FIXED: Changed from 'public_websocket_api' to 'retail_rest_api_proxy'
+  nbf: now,
+  exp: now + 120,
+  uri: `${method} ${host}${path}`
+};
 
   console.log('JWT Header:', JSON.stringify(header, null, 2));
   console.log('JWT Payload:', JSON.stringify(payload, null, 2));
