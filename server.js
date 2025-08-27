@@ -84,6 +84,7 @@ function botFor(uid) {
   return state.bots.get(uid);
 }
 
+
 // ---------- Key normalization (FIXED VERSION) ----------
 function normalizePrivateKey(input) {
   if (!input) {
@@ -110,28 +111,75 @@ function normalizePrivateKey(input) {
   return key;
 }
 
-let _cdpAuthModPromise = null;
+// ---------- SIMPLE JWT GENERATOR (Alternative to CDP SDK) ----------
+const crypto = require('crypto');
+
+function generateJwtManually({ apiKeyId, apiKeySecret, requestMethod, requestHost, requestPath, expiresIn = 120 }) {
+  const now = Math.floor(Date.now() / 1000);
+  
+  const header = {
+    alg: 'ES256',
+    typ: 'JWT',
+    kid: apiKeyId,
+  };
+  
+  const payload = {
+    iss: 'cdp',
+    sub: apiKeyId,
+    aud: ['public_websocket_api'],
+    nbf: now,
+    exp: now + expiresIn,
+    uri: `${requestMethod} ${requestHost}${requestPath}`,
+  };
+  
+  const base64UrlEncode = (obj) => {
+    return Buffer.from(JSON.stringify(obj))
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+  
+  const encodedHeader = base64UrlEncode(header);
+  const encodedPayload = base64UrlEncode(payload);
+  const data = `${encodedHeader}.${encodedPayload}`;
+  
+  // Sign with the private key
+  const sign = crypto.createSign('SHA256');
+  sign.update(data);
+  const signature = sign.sign(apiKeySecret, 'base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  
+  return `${data}.${signature}`;
+}
+
+// ---------- FIXED: Try CDP SDK first, fallback to manual JWT ----------
 async function getGenerateJwt() {
   try {
-    if (!_cdpAuthModPromise) {
-      // Try multiple import paths for different CDP SDK versions
-      try {
-        _cdpAuthModPromise = import('@coinbase/cdp-sdk');
-      } catch (e) {
-        try {
-          _cdpAuthModPromise = import('@coinbase/cdp-sdk/auth');
-        } catch (e2) {
-          // Fallback to require for CommonJS
-          const cdp = require('@coinbase/cdp-sdk');
-          return cdp.generateJwt || cdp.auth?.generateJwt;
-        }
-      }
+    // First try CDP SDK
+    const cdp = require('@coinbase/cdp-sdk');
+    console.log('CDP SDK methods:', Object.keys(cdp));
+    
+    // Try different possible export paths
+    if (typeof cdp.generateJwt === 'function') {
+      console.log('Using CDP SDK generateJwt');
+      return cdp.generateJwt;
     }
-    const mod = await _cdpAuthModPromise;
-    return mod.generateJwt || mod.auth?.generateJwt || mod.default?.generateJwt;
+    
+    if (cdp.auth && typeof cdp.auth.generateJwt === 'function') {
+      console.log('Using CDP SDK auth.generateJwt');
+      return cdp.auth.generateJwt;
+    }
+    
+    // If CDP SDK doesn't work, use manual JWT generation
+    console.log('CDP SDK generateJwt not found, using manual JWT generation');
+    return generateJwtManually;
+    
   } catch (error) {
-    console.error('CDP SDK import failed:', error.message);
-    throw new Error('CDP SDK not available - check installation');
+    console.error('CDP SDK failed, using manual JWT generation:', error.message);
+    return generateJwtManually;
   }
 }
 
