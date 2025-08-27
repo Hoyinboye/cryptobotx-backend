@@ -84,23 +84,33 @@ function botFor(uid) {
   return state.bots.get(uid);
 }
 
-// ---------- Key normalization (accept EC PKCS#1 or PKCS#8) ----------
-// ---------- Key normalization (accept EC PKCS#1 or PKCS#8) ----------
+// ---------- Key normalization (FIXED VERSION) ----------
 function normalizePrivateKey(input) {
   if (!input) {
     throw new Error('Missing private key');
   }
   
-  // Simply replace any escaped newlines with real newlines and trim whitespace.
-  let key = String(input).replace(/\\n/g, '\n').trim();
+  // Don't convert to String() or trim - preserve exact format
+  let key = input;
+  
+  // Only handle escaped newlines if they exist, don't modify otherwise
+  if (typeof key === 'string' && key.includes('\\n')) {
+    key = key.replace(/\\n/g, '\n');
+  }
 
-  const hasBegin = key.startsWith('-----BEGIN');
-  const hasEnd = key.endsWith('PRIVATE KEY-----');
+  // Convert to string only if it's not already a string
+  if (typeof key !== 'string') {
+    key = String(key);
+  }
+
+  const hasBegin = key.includes('-----BEGIN');
+  const hasEnd = key.includes('-----END');
 
   if (!hasBegin || !hasEnd) {
     throw new Error('Invalid key format - must include BEGIN/END lines');
   }
 
+  console.log("Key validation passed - length:", key.length);
   return key;
 }
 
@@ -271,7 +281,7 @@ async function permissionsHandler(req, res) {
 }
 app.get('/api/bot/permissions', authenticate, permissionsHandler);
 
-// ---------- Setup (connect & parameters) ----------
+// ---------- Setup endpoint (FIXED VERSION) ----------
 app.post('/api/bot/setup', authenticate, async (req, res) => {
   try {
     const {
@@ -291,12 +301,14 @@ app.post('/api/bot/setup', authenticate, async (req, res) => {
 
     if (!apiKey || !apiSecret) return res.status(400).json({ error: 'Missing apiKey or apiSecret' });
 
+    // Test the connection with the exact keys as received (no trimming!)
     const client = new CoinbaseAdvancedAPI(apiKey, apiSecret);
     await client.getAccounts(); // throws if invalid / unauthorized
 
     const b = botFor(req.user.userId);
     b.configured = true;
-    b.coinbase = { apiKey: apiKey.trim(), apiSecret: apiSecret.trim() };
+    // Store keys WITHOUT trimming
+    b.coinbase = { apiKey: apiKey, apiSecret: apiSecret };
     b.params = {
       strategy,
       minConfidence,
