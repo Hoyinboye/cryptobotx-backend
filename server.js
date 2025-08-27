@@ -111,26 +111,33 @@ function normalizePrivateKey(input) {
   return key;
 }
 
-// ---------- SIMPLE JWT GENERATOR (Alternative to CDP SDK) ----------
+// ---------- CORRECTED JWT GENERATOR FOR COINBASE ADVANCED TRADE API ----------
 const crypto = require('crypto');
 
 function generateJwtManually({ apiKeyId, apiKeySecret, requestMethod, requestHost, requestPath, expiresIn = 120 }) {
   const now = Math.floor(Date.now() / 1000);
   
+  // Coinbase Advanced Trade API specific JWT format
   const header = {
     alg: 'ES256',
     typ: 'JWT',
-    kid: apiKeyId,
+    kid: apiKeyId,  // This should be the full organizations/.../apiKeys/... format
+    nonce: crypto.randomBytes(16).toString('hex') // Add nonce for uniqueness
   };
   
   const payload = {
-    iss: 'cdp',
+    iss: 'coinbase-cloud',  // FIXED: Changed from 'cdp' to 'coinbase-cloud'
     sub: apiKeyId,
     aud: ['public_websocket_api'],
     nbf: now,
     exp: now + expiresIn,
-    uri: `${requestMethod} ${requestHost}${requestPath}`,
+    uri: `${requestMethod} ${requestHost}${requestPath}`,  // e.g., "GET api.coinbase.com/api/v3/brokerage/accounts"
   };
+
+  console.log('JWT Header:', JSON.stringify(header, null, 2));
+  console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+  console.log('Using API Key ID:', apiKeyId);
+  console.log('Request URI:', payload.uri);
   
   const base64UrlEncode = (obj) => {
     return Buffer.from(JSON.stringify(obj))
@@ -142,45 +149,64 @@ function generateJwtManually({ apiKeyId, apiKeySecret, requestMethod, requestHos
   
   const encodedHeader = base64UrlEncode(header);
   const encodedPayload = base64UrlEncode(payload);
-  const data = `${encodedHeader}.${encodedPayload}`;
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
   
-  // Sign with the private key
-  const sign = crypto.createSign('SHA256');
-  sign.update(data);
-  const signature = sign.sign(apiKeySecret, 'base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
+  console.log('Signing input:', signingInput.substring(0, 100) + '...');
   
-  return `${data}.${signature}`;
+  try {
+    // Create ECDSA signature with ES256 (ECDSA using P-256 curve and SHA-256 hash)
+    const sign = crypto.createSign('SHA256');
+    sign.update(signingInput);
+    
+    // Sign with the private key and get raw signature bytes
+    const signatureBuffer = sign.sign(apiKeySecret);
+    
+    // Convert to base64url format
+    const signature = signatureBuffer
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+    
+    const jwt = `${signingInput}.${signature}`;
+    console.log('Generated JWT length:', jwt.length);
+    console.log('JWT signature:', signature.substring(0, 20) + '...');
+    
+    return jwt;
+    
+  } catch (error) {
+    console.error('JWT signing failed:', error.message);
+    throw new Error(`JWT signing failed: ${error.message}`);
+  }
 }
 
-// ---------- FIXED: Try CDP SDK first, fallback to manual JWT ----------
+// ---------- UPDATED: Enhanced getGenerateJwt with better error handling ----------
 async function getGenerateJwt() {
   try {
     // First try CDP SDK
     const cdp = require('@coinbase/cdp-sdk');
-    console.log('CDP SDK methods:', Object.keys(cdp));
+    console.log('CDP SDK available methods:', Object.keys(cdp));
     
     // Try different possible export paths
     if (typeof cdp.generateJwt === 'function') {
-      console.log('Using CDP SDK generateJwt');
+      console.log('✅ Using CDP SDK generateJwt');
       return cdp.generateJwt;
     }
     
     if (cdp.auth && typeof cdp.auth.generateJwt === 'function') {
-      console.log('Using CDP SDK auth.generateJwt');
+      console.log('✅ Using CDP SDK auth.generateJwt');
       return cdp.auth.generateJwt;
     }
     
-    // If CDP SDK doesn't work, use manual JWT generation
-    console.log('CDP SDK generateJwt not found, using manual JWT generation');
-    return generateJwtManually;
+    console.log('⚠️ CDP SDK generateJwt not found, using manual implementation');
     
   } catch (error) {
-    console.error('CDP SDK failed, using manual JWT generation:', error.message);
-    return generateJwtManually;
+    console.log('⚠️ CDP SDK not available, using manual JWT generation:', error.message);
   }
+  
+  // Use manual JWT generation
+  console.log('✅ Using manual JWT generation for Coinbase Advanced Trade API');
+  return generateJwtManually;
 }
 
 // ---------- Coinbase Advanced Trade client (CDP SDK signer) ----------
