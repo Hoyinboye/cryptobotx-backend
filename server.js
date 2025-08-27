@@ -90,53 +90,50 @@ function normalizePrivateKey(input) {
     throw new Error('Missing private key');
   }
   
-  // Don't convert to String() or trim - preserve exact format
+  // Don't modify the key at all - just validate it has the right markers
   let key = input;
   
-  // Only handle escaped newlines if they exist, don't modify otherwise
+  // Only handle escaped newlines if they exist, but don't force string conversion
   if (typeof key === 'string' && key.includes('\\n')) {
     key = key.replace(/\\n/g, '\n');
   }
 
-  // Convert to string only if it's not already a string
-  if (typeof key !== 'string') {
-    key = String(key);
-  }
-
-  const hasBegin = key.includes('-----BEGIN');
-  const hasEnd = key.includes('-----END');
+  const keyStr = String(key);
+  const hasBegin = keyStr.includes('-----BEGIN');
+  const hasEnd = keyStr.includes('-----END') && keyStr.includes('PRIVATE KEY-----');
 
   if (!hasBegin || !hasEnd) {
     throw new Error('Invalid key format - must include BEGIN/END lines');
   }
 
-  console.log("Key validation passed - length:", key.length);
+  // Return the key exactly as received (no trimming, no extra processing)
   return key;
 }
 
-// ---------- Coinbase Advanced Trade client (CDP SDK signer) ----------
-let _cdpAuthModPromise = null;
-async function getGenerateJwt() {
-  if (!_cdpAuthModPromise) _cdpAuthModPromise = import('@coinbase/cdp-sdk/auth');
-  const mod = await _cdpAuthModPromise;
-  return mod.generateJwt;
-}
 
+// ---------- Coinbase Advanced Trade client (CDP SDK signer) ----------
 class CoinbaseAdvancedAPI {
   constructor(apiKeyResource, privateKeyPem) {
     console.log("--- DEBUG: DATA RECEIVED BY SERVER ---");
     console.log("Raw apiKeyResource:", apiKeyResource);
+    console.log("Raw privateKeyPem length:", privateKeyPem?.length);
+    console.log("Raw privateKeyPem starts with:", privateKeyPem?.substring(0, 50));
 
-    this.apiKeyResource = (apiKeyResource || '').trim(); // organizations/<org>/apiKeys/<uuid>
+    // DON'T TRIM the API key - use it exactly as received
+    this.apiKeyResource = apiKeyResource || '';
     const parts = this.apiKeyResource.split('/apiKeys/');
     if (parts.length !== 2) {
       throw new Error('Invalid API key format. Expect "organizations/<org>/apiKeys/<uuid>"');
     }
     this.orgResource = parts[0];
     this.apiKeyId = parts[1];
+    
+    // DON'T MODIFY the private key - use it exactly as received
     this.privateKeyPem = normalizePrivateKey(privateKeyPem);
 
-    console.log("Normalized privateKeyPem (sent to Coinbase SDK):", this.privateKeyPem);
+    console.log("Final privateKeyPem length:", this.privateKeyPem?.length);
+    console.log("Final privateKeyPem starts with:", String(this.privateKeyPem).substring(0, 50));
+    console.log("Final privateKeyPem ends with:", String(this.privateKeyPem).substring(String(this.privateKeyPem).length - 50));
     console.log("--- END DEBUG ---");
 
     this.HOST = 'api.coinbase.com';
@@ -301,13 +298,18 @@ app.post('/api/bot/setup', authenticate, async (req, res) => {
 
     if (!apiKey || !apiSecret) return res.status(400).json({ error: 'Missing apiKey or apiSecret' });
 
-    // Test the connection with the exact keys as received (no trimming!)
+    console.log("=== SETUP DEBUG ===");
+    console.log("Received apiKey:", apiKey);
+    console.log("Received apiSecret length:", apiSecret?.length);
+    console.log("Received apiSecret starts with:", apiSecret?.substring(0, 50));
+
+    // Test the connection with the exact keys as received (NO TRIMMING!)
     const client = new CoinbaseAdvancedAPI(apiKey, apiSecret);
     await client.getAccounts(); // throws if invalid / unauthorized
 
     const b = botFor(req.user.userId);
     b.configured = true;
-    // Store keys WITHOUT trimming
+    // Store keys WITHOUT any modification
     b.coinbase = { apiKey: apiKey, apiSecret: apiSecret };
     b.params = {
       strategy,
@@ -324,6 +326,7 @@ app.post('/api/bot/setup', authenticate, async (req, res) => {
 
     res.json({ ok: true, configured: true });
   } catch (e) {
+    console.error("Setup failed:", e.message);
     res.status(400).json({ error: `V3 DEBUG: Failed to connect to Coinbase API: ${e.message}` });
   }
 });
