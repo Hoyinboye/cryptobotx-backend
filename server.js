@@ -316,6 +316,30 @@ generateJWT(method, host, path) {
   return `${signingInput}.${signature}`;
 }
 
+getAccounts() {
+  return this.request('GET', '/accounts');
+}
+
+getCandles(productId, granularity, startISO, endISO) {
+  const qs = new URLSearchParams({
+    granularity,
+    start: startISO,
+    end: endISO,
+  }).toString();
+  return this.request('GET', `/products/${productId}/candles?${qs}`);
+}
+
+async getPortfolioSummary() {
+  const data = await this.getAccounts();
+  const accounts = data?.accounts || [];
+  let total = 0;
+  for (const a of accounts) {
+    const v = parseFloat(a?.available_balance?.value || '0');
+    if (!Number.isNaN(v)) total += v;
+  }
+  return { totalBalance: total, availableBalance: total * 0.9 };
+}
+
   getCandles(productId, granularity, startISO, endISO) {
     const qs = new URLSearchParams({
       granularity,
