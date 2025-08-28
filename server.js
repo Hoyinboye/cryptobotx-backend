@@ -282,12 +282,11 @@ generateJWT(method, host, path) {
   };
   
   const payload = {
-    iss: 'cdp',
+    iss: 'coinbase-cloud',  // FIXED: Correct issuer
     sub: this.apiKeyResource,
-    aud: ['retail_rest_api_proxy'],
     nbf: now,
     exp: now + 120,
-    uri: `${method} ${host}${path}`
+    uri: `${method} ${host}${path}`  // REMOVED: No 'aud' field for REST API
   };
 
   console.log("JWT Header:", JSON.stringify(header));
